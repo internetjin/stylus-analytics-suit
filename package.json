@@ -1,0 +1,29 @@
+{
+  "name": "stylus-analytics-suite",
+  "version": "0.1.0",
+  "description": "CLI for analyzing Arbitrum Stylus WASM contracts and generating Rust interface code for Stylus-to-Stylus calls",
+  "bin": { "sas": "./dist/cli.js" },
+  "type": "commonjs",
+  "main": "dist/cli.js",
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "analyze": "tsx src/cli.ts analyze",
+    "collisions": "tsx src/cli.ts collisions",
+    "gen": "tsx src/cli.ts gen",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@webassemblyjs/wasm-parser": "^1.12.1",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

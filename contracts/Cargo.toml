@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["erc20", "erc721", "erc1155"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+
+[workspace.dependencies]
+stylus-sdk = "0.10.5"
+
+[profile.release]
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+opt-level = "s"

@@ -1,0 +1,14 @@
+[package]
+name = "erc20"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+stylus-sdk.workspace = true
+
+[features]
+export-abi = ["stylus-sdk/export-abi"]
+contract-client-gen = []
+
+[lib]
+crate-type = ["lib", "cdylib"]
