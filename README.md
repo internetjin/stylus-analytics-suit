@@ -1,8 +1,8 @@
 # Stylus Analytics Suite
 
-CLI for analyzing Arbitrum Stylus WASM smart contracts and generating off-chain TypeScript / ethers.js code so backends and frontends can interact with them.
+CLI for analyzing Arbitrum Stylus WASM smart contracts and generating integration code: off-chain TypeScript / ethers.js wrappers for backends and frontends, and Rust `sol_interface!` modules for on-chain Stylus-to-Stylus calls.
 
-> **Status**: in development. Currently shipping milestones 1–3 of a six-milestone roadmap. **Stylus-to-Stylus** (on-chain contract calling another contract) interface generation is M4 -- out of scope here.
+> **Status**: in development. Milestones **1–5** of a six-milestone roadmap are implemented (WASM analysis, collision detection, TypeScript codegen, Stylus-to-Stylus interface export, and the interactive CLI). M6 (npm publish + final docs/report) remains.
 
 ## Project layout
 
@@ -13,8 +13,9 @@ artifacts/    <-- compiled WASM + JSON ABI per contract
   erc20.wasm  erc20.abi.json
   erc721.wasm erc721.abi.json
   erc1155.wasm erc1155.abi.json
-generated/    <-- `npm run gen` writes ethers.js TS modules here
-  erc1155.ts
+generated/    <-- `npm run gen` writes ethers.js TS modules here (.ts)
+              <-- `npm run export-interface` writes Rust sol_interface! modules (.rs)
+  erc1155.ts  erc20.rs
 scripts/
   build-real-fixtures.sh  <-- end-to-end: cargo build → ABI → artifacts/
   sol-to-abi.mjs          <-- converts cargo-stylus's Solidity output to JSON ABI
@@ -36,8 +37,10 @@ Each feature is its own npm script. Pass the contract name (or an explicit file 
 | `npm run analyze <name\|path>` | M1 | Parses the WASM header and AST, brotli-compresses the body, checks both sizes against the Stylus deploy / activation caps, and estimates live deployment cost via an Arbitrum RPC. Resolves `artifacts/<name>.wasm` for bare names. |
 | `npm run collisions <name\|path>` | M2 | Computes the 4-byte selector of every function in the ABI and reports any selector that maps to more than one signature. Exits non-zero on a collision. Resolves `artifacts/<name>.abi.json` (then `<name>.json`) for bare names. |
 | `npm run gen <name\|path>` | M3 | Emits a TypeScript module that wraps the contract via ethers.js. Backends / frontends import it, call `attach<Name>(address, runnerOrSigner)`, and get a typed handle with `Promise`-returning read methods and `ContractTransactionResponse`-returning write methods. Writes to `generated/<name>.ts` by default. |
+| `npm run export-interface <name\|path>` | M4 | Emits a Rust `sol_interface!` module so a **Stylus contract can call this one on-chain** (Stylus-to-Stylus). ABI types map straight to Solidity; `view`/`pure`/`payable` are preserved. Use `--module <name>` to namespace the interface inside a Rust module. Writes to `generated/<name>.rs` by default. |
+| `npm run interactive` | M5 | Interactive prompt: lists the contracts in `artifacts/`, lets you pick one and an action (analyze / collisions / gen / export-interface), and runs it. Running `sas` with no subcommand drops into the same wizard. |
 
-Flags (e.g. `--no-cost`, `-o <path>`, `--stdout`) need to come after a `--` separator so npm doesn't intercept them: `npm run analyze erc721 -- --no-cost`.
+Flags (e.g. `--no-cost`, `-o <path>`, `--stdout`, `--module <name>`) need to come after a `--` separator so npm doesn't intercept them: `npm run analyze erc721 -- --no-cost`.
 
 ## Install
 
@@ -89,7 +92,7 @@ The cost number covers the EVM CREATE only. The separate `ArbWasm.activateProgra
 - ABI type mapping: `address` / `string` / `bytes*` → `string`; `bool` → `boolean`; `(u)intN` → `bigint`; arrays → `T[]`; tuples → object types with named fields.
 - Constructors, events, fallbacks, and receive functions are dropped from the typed interface (they still live in the embedded ABI for ethers's runtime use).
 
-The Stylus-to-Stylus / on-chain interface generator is M4 -- separate runtime, separate output language. Not part of this CLI yet.
+For the **on-chain** counterpart — generating a Rust `sol_interface!` so one Stylus contract can call another — see the `export-interface` command (M4) above. ABI tuple/struct types are emitted as anonymous Solidity tuples (e.g. `(address,uint128)`), which `sol_interface!` accepts directly; `test/compile.test.ts` builds the generated output against `stylus-sdk` to prove it compiles.
 
 ## Tests
 
@@ -102,12 +105,16 @@ Uses Node 20's built-in `node:test` via `tsx`. Coverage:
 - known ERC-20 selectors round-trip,
 - collision detection groups distinct signatures that share a selector,
 - ethers TS generator splits read vs. write returns, threads payable overrides, maps array / tuple types,
+- Stylus `sol_interface!` generator maps mutability, returns, array/tuple types (single-element tuples get the required trailing comma), and `--module` namespacing,
 - minimal WASM header / magic checks,
 - size analyzer flags over-cap compressed payloads,
 - deploy bytecode begins with the 14-byte init stub and embeds the Stylus magic prefix in the right offset.
 
-## Roadmap (post-M3)
+`test/compile.test.ts` goes further for the M4 output: it writes the generated `sol_interface!` for the real fixtures (plus a tuple-heavy synthetic ABI) into a throwaway crate and **builds it for `wasm32-unknown-unknown` against the pinned `stylus-sdk`** — so "it compiles in a Stylus crate" is actually verified, not just string-matched. It runs as part of `npm test` when a Rust/`cargo`/wasm32 toolchain is present and skips otherwise; run it explicitly with `npm run test:compile`, or skip it with `SAS_SKIP_COMPILE_TEST=1`.
 
-- **M4** -- Stylus Interface Exporter: emit Rust `sol_interface!` blocks so one Stylus contract can call another on-chain. Different runtime (on-chain), different output language (Rust). Not in this CLI yet.
-- **M5** -- interactive CLI flows.
-- **M6** -- NPM package, install guides, final docs.
+## Roadmap
+
+- **M1–M3** -- WASM analysis, selector-collision detection, TypeScript/ethers codegen. ✅ shipped.
+- **M4** -- Stylus Interface Exporter: emit Rust `sol_interface!` blocks so one Stylus contract can call another on-chain. ✅ shipped (`export-interface`); output is compile-tested against `stylus-sdk`.
+- **M5** -- interactive CLI (`interactive`, or bare `sas`). ✅ shipped.
+- **M6** -- NPM package, install guides, final docs/report. (remaining)

@@ -12,7 +12,10 @@
     "analyze": "tsx src/cli.ts analyze",
     "collisions": "tsx src/cli.ts collisions",
     "gen": "tsx src/cli.ts gen",
+    "export-interface": "tsx src/cli.ts export-interface",
+    "interactive": "tsx src/cli.ts interactive",
     "test": "tsx --test test/*.test.ts",
+    "test:compile": "tsx --test test/compile.test.ts",
     "typecheck": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
