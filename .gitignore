@@ -4,4 +4,3 @@ dist/
 .DS_Store
 *.log
 contracts/target/
-contracts/Cargo.lock
