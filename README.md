@@ -1,75 +1,110 @@
 # Stylus Analytics Suite
 
+[![npm](https://img.shields.io/npm/v/stylus-analytics-suite.svg)](https://www.npmjs.com/package/stylus-analytics-suite)
+
 CLI for analyzing Arbitrum Stylus WASM smart contracts and generating integration code: off-chain TypeScript / ethers.js wrappers for backends and frontends, and Rust `sol_interface!` modules for on-chain Stylus-to-Stylus calls.
-
-> **Status**: in development. Milestones **1–5** of a six-milestone roadmap are implemented (WASM analysis, collision detection, TypeScript codegen, Stylus-to-Stylus interface export, and the interactive CLI). M6 (npm publish + final docs/report) remains.
-
-## Project layout
-
-```
-contracts/    <-- real Stylus contracts (Rust workspace, three crates)
-  erc20/  erc721/  erc1155/
-artifacts/    <-- compiled WASM + JSON ABI per contract
-  erc20.wasm  erc20.abi.json
-  erc721.wasm erc721.abi.json
-  erc1155.wasm erc1155.abi.json
-generated/    <-- `npm run gen` writes ethers.js TS modules here (.ts)
-              <-- `npm run export-interface` writes Rust sol_interface! modules (.rs)
-  erc1155.ts  erc20.rs
-scripts/
-  build-real-fixtures.sh  <-- end-to-end: cargo build → ABI → artifacts/
-  sol-to-abi.mjs          <-- converts cargo-stylus's Solidity output to JSON ABI
-  inject-collision.mjs    <-- mines a 4-byte collision and appends to an ABI
-src/
-test/
-```
-
-`scripts/build-real-fixtures.sh` rebuilds the three contracts under `contracts/`, copies the WASM into `artifacts/`, exports each ABI to JSON, and injects a pre-mined 4-byte selector collision into the ERC-20 ABI so M2 has something to flag. Requires `cargo`, `cargo-stylus`, the `wasm32-unknown-unknown` Rust target, and `npm install` in the repo root.
-
-For each contract, the CLI looks up `artifacts/<name>.wasm` and `artifacts/<name>.abi.json` by bare name. Explicit file paths (anything containing `/`, `\`, `.wasm`, or `.json`) work too. Override folder locations with `SAS_ARTIFACTS_DIR` and `SAS_OUT_DIR`.
-
-## Commands
-
-Each feature is its own npm script. Pass the contract name (or an explicit file path) as the next argument:
-
-| Command | Milestone | What it does |
-| --- | --- | --- |
-| `npm run analyze <name\|path>` | M1 | Parses the WASM header and AST, brotli-compresses the body, checks both sizes against the Stylus deploy / activation caps, and estimates live deployment cost via an Arbitrum RPC. Resolves `artifacts/<name>.wasm` for bare names. |
-| `npm run collisions <name\|path>` | M2 | Computes the 4-byte selector of every function in the ABI and reports any selector that maps to more than one signature. Exits non-zero on a collision. Resolves `artifacts/<name>.abi.json` (then `<name>.json`) for bare names. |
-| `npm run gen <name\|path>` | M3 | Emits a TypeScript module that wraps the contract via ethers.js. Backends / frontends import it, call `attach<Name>(address, runnerOrSigner)`, and get a typed handle with `Promise`-returning read methods and `ContractTransactionResponse`-returning write methods. Writes to `generated/<name>.ts` by default. |
-| `npm run export-interface <name\|path>` | M4 | Emits a Rust `sol_interface!` module so a **Stylus contract can call this one on-chain** (Stylus-to-Stylus). ABI types map straight to Solidity; `view`/`pure`/`payable` are preserved. Use `--module <name>` to namespace the interface inside a Rust module. Writes to `generated/<name>.rs` by default. |
-| `npm run interactive` | M5 | Interactive prompt: lists the contracts in `artifacts/`, lets you pick one and an action (analyze / collisions / gen / export-interface), and runs it. Running `sas` with no subcommand drops into the same wizard. |
-
-Flags (e.g. `--no-cost`, `-o <path>`, `--stdout`, `--module <name>`) need to come after a `--` separator so npm doesn't intercept them: `npm run analyze erc721 -- --no-cost`.
 
 ## Install
 
 Requires Node 20+.
 
 ```bash
-npm install
-npm run build
+npm install -g stylus-analytics-suite
 ```
 
-You can also run straight from source without building:
+Or run it without installing:
 
 ```bash
-npm run analyze ./path/to/contract.wasm
+npx stylus-analytics-suite analyze ./target/wasm32-unknown-unknown/release/my_contract.wasm
 ```
+
+## Quickstart
+
+Point `sas` at a compiled `.wasm` to check it against the Stylus deploy limits:
+
+```console
+$ sas analyze ./my_contract.wasm --no-cost
+WASM: my_contract.wasm
+  version            1
+  functions          256
+  imports            10
+  exports            4
+  memory pages       17 (1088 KB)
+
+Size:
+  raw                79844 B  (activation cap 131072 B, OK)
+  brotli-compressed  21143 B  (deploy cap 24576 B, OK)
+  compression ratio  26.5%
+  ! Compressed WASM uses 86.0% of the 24576 B deploy budget.
+```
+
+Point it at an ABI to check for 4-byte selector collisions (exits non-zero if any are found, so it drops straight into CI):
+
+```console
+$ sas collisions ./my_contract.abi.json
+ABI: my_contract.abi.json
+  functions          12
+  unique selectors   11
+  collisions         1
+
+  ! selector 0x62018627 matches 2 signatures:
+      - f130736()
+      - f8491()
+```
+
+Then generate integration code from the same ABI:
+
+```bash
+sas gen ./my_contract.abi.json               # -> generated/my_contract.ts  (ethers v6, off-chain)
+sas export-interface ./my_contract.abi.json  # -> generated/my_contract.rs  (sol_interface!, on-chain)
+```
+
+Run `sas` with no arguments for an interactive prompt.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `sas analyze <name\|path>` | Parses the WASM header and AST, brotli-compresses the body, checks both sizes against the Stylus deploy / activation caps, and estimates live deployment cost via an Arbitrum RPC. `--no-cost` skips the RPC call. |
+| `sas collisions <name\|path>` | Computes the 4-byte selector of every function in the ABI and reports any selector that maps to more than one signature. Exits non-zero on a collision. |
+| `sas gen <name\|path>` | Emits a TypeScript module that wraps the contract via ethers v6. Backends / frontends import it, call `attach<Name>(address, runnerOrSigner)`, and get a typed handle with `Promise`-returning read methods and `ContractTransactionResponse`-returning write methods. Writes to `generated/<name>.ts`. |
+| `sas export-interface <name\|path>` | Emits a Rust `sol_interface!` module so a **Stylus contract can call this one on-chain** (Stylus-to-Stylus). ABI types map straight to Solidity; `view`/`pure`/`payable` are preserved. `--module <name>` namespaces the interface inside a Rust module. Writes to `generated/<name>.rs`. |
+| `sas interactive` | Lists the contracts it can find, lets you pick one and an action, and runs it. Bare `sas` drops into the same wizard. |
+
+Common flags: `--stdout` prints instead of writing a file, `-o <path>` overrides the output path, `--name <I>` renames the generated interface.
+
+## Finding your contracts
+
+Every command takes either an explicit path (anything containing `/`, `\`, `.wasm`, or `.json`) or a bare contract name. Bare names resolve against an artifacts directory — `./artifacts` by default:
+
+```bash
+sas analyze erc721        # reads ./artifacts/erc721.wasm
+sas collisions erc721     # reads ./artifacts/erc721.abi.json, then ./artifacts/erc721.json
+```
+
+Set `SAS_ARTIFACTS_DIR` to point at your own build output, and `SAS_OUT_DIR` to change where generated code lands (default `./generated`).
 
 ## Configure
 
+Only `sas analyze` needs network access, and only for the cost estimate. Every other command works entirely offline.
+
+`ARB_RPC_URL` is **optional**. If you don't set it, the cost step falls back to the public endpoint `https://arb1.arbitrum.io/rpc` — so a freshly installed CLI will reach a third-party host on its first `analyze` run unless you say otherwise. `analyze` prints whichever endpoint it used, and marks it `(default)` when the fallback is in play.
+
+To use your own endpoint:
+
 ```bash
-cp .env.example .env
-# edit .env:
-#   ARB_RPC_URL=https://arb1.arbitrum.io/rpc
+export ARB_RPC_URL=https://your-endpoint.example/rpc
 ```
 
-`ARB_RPC_URL` is only needed for `npm run analyze` when running the cost step. `collisions` and `gen` work entirely offline.
+A `.env` file in the working directory works too — see `.env.example`. To skip the network entirely:
 
-## How each milestone is wired
+```bash
+sas analyze ./my_contract.wasm --no-cost
+```
 
-### M1 -- `npm run analyze`
+## How it works
+
+### `analyze`
 
 - `src/wasm/parse.ts` reads the file, checks the magic header / version, and walks the AST via `@webassemblyjs/wasm-parser` to count functions, imports, exports, and memory pages.
 - `src/wasm/size.ts` compresses the raw WASM with brotli at quality 11 (matches the deploy-time compression used by `cargo stylus`) and compares the result against the EIP-170 deploy cap (24,576 B) and the activation cap (128 KB). Both limits are configurable via `--compressed-limit` / `--activation-limit`.
@@ -77,12 +112,12 @@ cp .env.example .env
 
 The cost number covers the EVM CREATE only. The separate `ArbWasm.activateProgram()` transaction is **not** included -- that's its own gas line and depends on memory pages / opcount, which we don't simulate yet.
 
-### M2 -- `npm run collisions`
+### `collisions`
 
 - `src/selectors/compute.ts` builds each function's canonical signature (flattening tuple components, preserving tuple array suffixes) and computes `keccak256(sig)[0..4]`.
 - `src/selectors/collisions.ts` groups by selector and reports any group with more than one distinct signature. The exit code is 1 if anything collides -- handy for CI.
 
-### M3 -- `npm run gen`
+### `gen`
 
 - `src/codegen/ethers.ts` walks the ABI and emits a TypeScript module targeting **ethers v6** for off-chain (backend / frontend) consumption.
 - The generated file exports:
@@ -92,9 +127,47 @@ The cost number covers the EVM CREATE only. The separate `ArbWasm.activateProgra
 - ABI type mapping: `address` / `string` / `bytes*` → `string`; `bool` → `boolean`; `(u)intN` → `bigint`; arrays → `T[]`; tuples → object types with named fields.
 - Constructors, events, fallbacks, and receive functions are dropped from the typed interface (they still live in the embedded ABI for ethers's runtime use).
 
-For the **on-chain** counterpart — generating a Rust `sol_interface!` so one Stylus contract can call another — see the `export-interface` command (M4) above. ABI tuple/struct types are emitted as anonymous Solidity tuples (e.g. `(address,uint128)`), which `sol_interface!` accepts directly; `test/compile.test.ts` builds the generated output against `stylus-sdk` to prove it compiles.
+### `export-interface`
 
-## Tests
+ABI tuple/struct types are emitted as anonymous Solidity tuples (e.g. `(address,uint128)`), which `sol_interface!` accepts directly. The command also reuses the collision analyzer: an ABI with selector collisions, or with overloaded function names that `sol_interface!` would collapse onto one snake_case method (rustc E0592), gets a warning on stderr before the file is written.
+
+## Developing
+
+From a checkout of the source:
+
+```bash
+npm install
+npm run build
+```
+
+Run from source without building — note that npm needs a `--` separator before CLI flags:
+
+```bash
+npm run analyze erc721 -- --no-cost
+```
+
+### Repo layout
+
+```
+contracts/    <-- real Stylus contracts (Rust workspace, three crates)
+  erc20/  erc721/  erc1155/
+artifacts/    <-- compiled WASM + JSON ABI per contract
+  erc20.wasm  erc20.abi.json
+  erc721.wasm erc721.abi.json
+  erc1155.wasm erc1155.abi.json
+generated/    <-- `sas gen` writes ethers.js TS modules here (.ts)
+              <-- `sas export-interface` writes Rust sol_interface! modules (.rs)
+scripts/
+  build-real-fixtures.sh  <-- end-to-end: cargo build → ABI → artifacts/
+  sol-to-abi.mjs          <-- converts cargo-stylus's Solidity output to JSON ABI
+  inject-collision.mjs    <-- mines a 4-byte collision and appends to an ABI
+src/
+test/
+```
+
+`scripts/build-real-fixtures.sh` rebuilds the three contracts under `contracts/`, copies the WASM into `artifacts/`, exports each ABI to JSON, and injects a pre-mined 4-byte selector collision into the ERC-20 ABI so the collision analyzer has something to flag. Requires `cargo`, `cargo-stylus`, the `wasm32-unknown-unknown` Rust target, and `npm install` in the repo root.
+
+### Tests
 
 ```bash
 npm test
@@ -110,11 +183,28 @@ Uses Node 20's built-in `node:test` via `tsx`. Coverage:
 - size analyzer flags over-cap compressed payloads,
 - deploy bytecode begins with the 14-byte init stub and embeds the Stylus magic prefix in the right offset.
 
-`test/compile.test.ts` goes further for the M4 output: it writes the generated `sol_interface!` for the real fixtures (plus a tuple-heavy synthetic ABI) into a throwaway crate and **builds it for `wasm32-unknown-unknown` against the pinned `stylus-sdk`** — so "it compiles in a Stylus crate" is actually verified, not just string-matched. It runs as part of `npm test` when a Rust/`cargo`/wasm32 toolchain is present and skips otherwise; run it explicitly with `npm run test:compile`, or skip it with `SAS_SKIP_COMPILE_TEST=1`.
+Without a Rust toolchain, run the suite that doesn't need one — this is also what CI runs on every push, and what `npm publish` runs before it ships anything:
+
+```bash
+npm run test:fast     # everything except the Rust compile test
+npm run test:compile  # only the Rust compile test
+```
+
+`test/compile.test.ts` goes further for the `export-interface` output: it writes the generated `sol_interface!` for the real fixtures (plus a tuple-heavy synthetic ABI) into a throwaway crate and **builds it for `wasm32-unknown-unknown`** — so "it compiles in a Stylus crate" is actually verified, not just string-matched.
+
+The throwaway crate pins `stylus-sdk` to an exact `=x.y.z`, read from the resolved version in the committed `contracts/Cargo.lock`. That's deliberate: taking the caret requirement from `Cargo.toml` instead would let Cargo re-resolve on every run, so an upstream patch release could break the build with no change to this repo. If you bump the SDK, rebuild the lockfile and commit it.
+
+The test skips itself when no `cargo`/wasm32 toolchain is present, so `npm test` degrades gracefully on a machine without Rust. `SAS_SKIP_COMPILE_TEST=1` forces that skip, which is occasionally useful when a toolchain is installed but broken — but prefer `npm run test:fast`, which simply doesn't load the file.
 
 ## Roadmap
 
 - **M1–M3** -- WASM analysis, selector-collision detection, TypeScript/ethers codegen. ✅ shipped.
-- **M4** -- Stylus Interface Exporter: emit Rust `sol_interface!` blocks so one Stylus contract can call another on-chain. ✅ shipped (`export-interface`); output is compile-tested against `stylus-sdk`.
-- **M5** -- interactive CLI (`interactive`, or bare `sas`). ✅ shipped.
-- **M6** -- NPM package, install guides, final docs/report. (remaining)
+- **M4** -- Stylus Interface Exporter: emit Rust `sol_interface!` blocks so one Stylus contract can call another on-chain. ✅ shipped; output is compile-tested against `stylus-sdk`.
+- **M5** -- interactive CLI (`sas interactive`, or bare `sas`). ✅ shipped.
+- **M6** -- npm package, install guides, CI. In progress.
+
+Known gaps: `analyze` does not yet model `ArbWasm.activateProgram()` gas, and collision detection is scoped to a single ABI (no cross-contract analysis).
+
+## License
+
+[MIT](./LICENSE)

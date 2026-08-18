@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import {
   canonicalType,
@@ -374,4 +376,27 @@ test("cost -- deploy bytecode begins with the 14-byte init stub and embeds Stylu
   assert.equal(hex.slice(2 + 28, 2 + 28 + 6), "eff000");
   // Followed by the original compressed payload (aa bb cc).
   assert.equal(hex.slice(2 + 28 + 6), "aabbcc");
+});
+
+// The test scripts name their files explicitly rather than globbing, because npm
+// runs scripts through cmd.exe on Windows and no glob expansion happens there.
+// The cost of that is a hand-maintained list: add test/foo.test.ts, forget to
+// wire it up, and it runs nowhere -- silently, with a green suite. Fail loudly
+// instead.
+test("scripts -- every test file is referenced by an npm script", () => {
+  const repo = resolve(__dirname, "..");
+  const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  const allScripts = Object.values(pkg.scripts).join(" ");
+
+  const testFiles = readdirSync(join(repo, "test")).filter((f) => f.endsWith(".test.ts"));
+  assert.ok(testFiles.length > 0, "no test files found — the glob-free scripts would be vacuously satisfied");
+
+  for (const file of testFiles) {
+    assert.ok(
+      allScripts.includes(`test/${file}`),
+      `test/${file} is not named by any npm script, so it never runs. Add it to "test" and to "test:fast" or "test:compile".`,
+    );
+  }
 });
