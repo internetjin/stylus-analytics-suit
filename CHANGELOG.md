@@ -39,6 +39,12 @@ Releases are cut by hand — there is no release automation yet. The full sequen
 
 ## [1.0.0] — 2026-08-18
 
+**Deprecated on npm.** This release reports `--version` as `0.1.0`; use 1.0.1.
+It also has no git tag: the version bump happened on an uncommitted tree, so no
+commit in this repository ever contained the 1.0.0 manifest and none can honestly
+be tagged as such. 1.0.1 is tagged `v1.0.1` and its tree reproduces the published
+tarball exactly.
+
 First public release, so everything below is new rather than changed.
 
 ### Commands
