@@ -30,13 +30,24 @@ function toolchainAvailable(): string | false {
   return false;
 }
 
+// Read the exact stylus-sdk the workspace resolved, from the committed lockfile.
+// Taking the requirement out of Cargo.toml instead would leave the throwaway
+// crate on a caret range with no lockfile of its own, so Cargo would re-resolve
+// it on every run and a new 0.10.x release could break this test with no change
+// to the repo. Missing/unparseable is a hard failure -- a silent default would
+// pin the test to a version nothing else in the repo uses.
 function stylusSdkVersion(): string {
-  try {
-    const ws = readFileSync(join(REPO, "contracts", "Cargo.toml"), "utf8");
-    return ws.match(/stylus-sdk\s*=\s*"([^"]+)"/)?.[1] ?? "0.10.5";
-  } catch {
-    return "0.10.5";
+  const lockPath = join(REPO, "contracts", "Cargo.lock");
+  const lock = readFileSync(lockPath, "utf8");
+  const block = lock.split("[[package]]").find((b) => /\bname = "stylus-sdk"/.test(b));
+  const version = block?.match(/\bversion = "([^"]+)"/)?.[1];
+  if (!version) {
+    throw new Error(
+      `no resolved stylus-sdk version in ${lockPath} — ` +
+        "run `cargo build` in contracts/ to regenerate the lockfile.",
+    );
   }
+  return version;
 }
 
 // tuple param, tuple-array return, a nested tuple, and a payable function — the
@@ -93,7 +104,7 @@ edition = "2021"
 version = "0.0.0"
 
 [dependencies]
-stylus-sdk = "${stylusSdkVersion()}"
+stylus-sdk = "=${stylusSdkVersion()}"
 
 [lib]
 crate-type = ["lib"]

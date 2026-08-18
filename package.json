@@ -1,20 +1,53 @@
 {
   "name": "stylus-analytics-suite",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "CLI for analyzing Arbitrum Stylus WASM contracts and generating Rust interface code for Stylus-to-Stylus calls",
-  "bin": { "sas": "./dist/cli.js" },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/internetjin/stylus-analytics-suit.git"
+  },
+  "homepage": "https://github.com/internetjin/stylus-analytics-suit#readme",
+  "bugs": {
+    "url": "https://github.com/internetjin/stylus-analytics-suit/issues"
+  },
+  "keywords": [
+    "arbitrum",
+    "stylus",
+    "wasm",
+    "smart-contracts",
+    "abi",
+    "codegen",
+    "ethers",
+    "rust",
+    "sol-interface",
+    "function-selector",
+    "cli"
+  ],
+  "bin": {
+    "sas": "dist/cli.js"
+  },
   "type": "commonjs",
   "main": "dist/cli.js",
-  "files": ["dist", "README.md"],
-  "engines": { "node": ">=20" },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run typecheck && npm run build && npm run test:fast",
     "analyze": "tsx src/cli.ts analyze",
     "collisions": "tsx src/cli.ts collisions",
     "gen": "tsx src/cli.ts gen",
     "export-interface": "tsx src/cli.ts export-interface",
     "interactive": "tsx src/cli.ts interactive",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test test/smoke.test.ts test/interactive.test.ts test/compile.test.ts",
+    "test:fast": "tsx --test test/smoke.test.ts test/interactive.test.ts",
     "test:compile": "tsx --test test/compile.test.ts",
     "typecheck": "tsc -p tsconfig.test.json --noEmit"
   },

@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Fast lane: typecheck, build, and the pure-TypeScript tests on every supported
+  # Node major. The Rust compile test is skipped here and runs once in `compile`.
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm run test:fast
+
+      # The published artifact is built from dist/, which is gitignored — so pack
+      # it and run the real binary the way an installed user would.
+      - name: Smoke-test the packed tarball
+        run: |
+          npm pack --pack-destination /tmp
+          npm i -g /tmp/stylus-analytics-suite-*.tgz
+          sas --version
+          sas --help
+          sas analyze ./artifacts/erc721.wasm --no-cost
+          sas collisions ./artifacts/erc721.abi.json
+          sas gen ./artifacts/erc721.abi.json --stdout > /dev/null
+          sas export-interface ./artifacts/erc721.abi.json --stdout > /dev/null
+          # The wizard is the only command that reads stdin, so it is the only one
+          # that can hang the job rather than fail it. Run the installed binary
+          # with closed stdin from a directory with no artifacts: it must report
+          # that and exit 0 instead of blocking.
+          (cd "$(mktemp -d)" && sas < /dev/null)
+
+  # The correctness bar for the M4 exporter is that the emitted sol_interface!
+  # actually compiles against stylus-sdk for wasm32. Slow and cache-sensitive,
+  # so it gets its own job rather than running once per Node version.
+  compile:
+    name: stylus codegen compiles (wasm32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      # Keyed on the lockfile, not just the manifest: the compile test pins the
+      # throwaway crate to the version Cargo.lock resolved, so the lockfile is
+      # what actually determines whether a cached contracts/target is valid.
+      # No restore-keys — a partial-match restore would hand back a target/ built
+      # against a different stylus-sdk, which is the drift this key exists to catch.
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('contracts/Cargo.lock', 'contracts/rust-toolchain.toml') }}
+
+      - name: Compile generated sol_interface!
+        run: npm run test:compile

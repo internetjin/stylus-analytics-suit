@@ -4,11 +4,18 @@ import { Command } from "commander";
 import { runAnalyze, runCollisions, runGen, runExport } from "./commands";
 import { runWizard } from "./interactive";
 
+// Read the version from package.json rather than repeating it here: `npm version`
+// only rewrites package.json, so a hardcoded string silently drifts and ships a
+// CLI that misreports itself. Plain require (not an import) keeps package.json
+// outside tsc's rootDir while resolving identically from src/ and dist/.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { version } = require("../package.json") as { version: string };
+
 const program = new Command();
 program
   .name("sas")
   .description("Stylus Analytics Suite -- WASM analysis and Stylus codegen")
-  .version("0.1.0");
+  .version(version);
 
 program
   .command("analyze")
