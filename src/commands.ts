@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { basename, dirname, relative } from "node:path";
 
 import { loadAbi } from "./abi/load";
+import { loadConfig } from "./config";
 import { parseWasm, readWasm } from "./wasm/parse";
 import { analyzeSize, brotliMaxCompress } from "./wasm/size";
 import { estimateDeploymentCost } from "./wasm/cost";
@@ -11,6 +12,7 @@ import { detectCollisions } from "./selectors/collisions";
 import { generateEthersInterface } from "./codegen/ethers";
 import { generateStylusInterface, overloadedFunctionNames } from "./codegen/stylus";
 import {
+  assertInputExists,
   defaultExportOutputPath,
   defaultGenOutputPath,
   deriveContractName,
@@ -43,6 +45,7 @@ export type AnalyzeOptions = {
 // M1 -- WASM size validation + live-RPC deployment cost estimate
 export async function runAnalyze(arg: string, opts: AnalyzeOptions): Promise<void> {
   const wasmPath = resolveWasmInput(arg);
+  assertInputExists(wasmPath, arg, "WASM");
   const bytes = readWasm(wasmPath);
   const wasm = parseWasm(bytes);
   if (!wasm.magicValid) {
@@ -82,6 +85,9 @@ export async function runAnalyze(arg: string, opts: AnalyzeOptions): Promise<voi
     const compressed = brotliMaxCompress(bytes);
     console.log();
     console.log("Deployment cost (live RPC):");
+    // ARB_RPC_URL is optional and falls back to a public endpoint, so the numbers
+    // below can come from a host the user never chose. Name it.
+    console.log(`  endpoint           ${loadConfig().rpcUrl}${process.env.ARB_RPC_URL ? "" : "  (default — set ARB_RPC_URL to override)"}`);
     try {
       const cost = await estimateDeploymentCost(compressed, provider);
       console.log(`  estimated gas      ${cost.estimatedDeployGas.toString()}`);
@@ -101,6 +107,7 @@ export async function runAnalyze(arg: string, opts: AnalyzeOptions): Promise<voi
 // M2 -- detect 4-byte selector collisions inside a single ABI
 export function runCollisions(arg: string): void {
   const abiPath = resolveAbiInput(arg);
+  assertInputExists(abiPath, arg, "ABI");
   const abi = loadAbi(abiPath);
   const resolved = resolveSelectors(abi);
   const report = detectCollisions(resolved);
@@ -132,6 +139,7 @@ export type GenOptions = {
 // M3 -- emit a TypeScript ethers.js module for off-chain interaction
 export function runGen(arg: string, opts: GenOptions): void {
   const abiPath = resolveAbiInput(arg);
+  assertInputExists(abiPath, arg, "ABI");
   const abi = loadAbi(abiPath);
   const { contractName, interfaceName } = namesFor(arg, opts.contract, opts.name);
 
@@ -158,6 +166,7 @@ export type ExportOptions = {
 // M4 -- emit a Rust sol_interface! module for Stylus-to-Stylus (on-chain) calls
 export function runExport(arg: string, opts: ExportOptions): void {
   const abiPath = resolveAbiInput(arg);
+  assertInputExists(abiPath, arg, "ABI");
   const abi = loadAbi(abiPath);
   const { contractName, interfaceName } = namesFor(arg, opts.contract, opts.name);
 

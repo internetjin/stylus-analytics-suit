@@ -36,6 +36,33 @@ export function resolveAbiInput(arg: string, artifactsDir = getArtifactsDir()): 
   return join(artifactsDir, `${arg}.json`);
 }
 
+// The resolvers above are pure path math — they never touch the disk, so a
+// missing file surfaces later as a raw ENOENT from the reader. That reads badly
+// for the common install-from-npm case, where there is no artifacts/ dir at all
+// and a bare name has nowhere to resolve to. Call this after resolving to turn
+// that into an actionable message.
+export function assertInputExists(
+  resolvedPath: string,
+  arg: string,
+  kind: "WASM" | "ABI",
+  artifactsDir = getArtifactsDir(),
+): void {
+  if (existsSync(resolvedPath)) return;
+
+  if (isPathLike(arg)) {
+    throw new Error(`no ${kind} file at ${resolvedPath}`);
+  }
+
+  const hint = existsSync(artifactsDir)
+    ? `No ${kind} for "${arg}" in ${artifactsDir}.`
+    : `No artifacts directory at ${artifactsDir}.`;
+  throw new Error(
+    `${hint}\n` +
+      `Pass an explicit path (e.g. \`sas ${kind === "WASM" ? "analyze" : "gen"} ./path/to/contract.${kind === "WASM" ? "wasm" : "abi.json"}\`), ` +
+      `or point SAS_ARTIFACTS_DIR at the directory holding your build output.`,
+  );
+}
+
 export function defaultGenOutputPath(arg: string, outDir = getGeneratedDir()): string {
   const stem = arg
     .replace(/^.*[\\/]/, "")
